@@ -103,7 +103,8 @@ def test_test_commands_are_detected(tmp_path):
     py = tmp_path / "py"
     (py / "tests").mkdir(parents=True)
     assert devloop.test_command(py) == [str(devloop.VENV_PY), "-m", "pytest", "-q"]     # no venv: Sanae's
-    assert devloop.as_shell(devloop.test_command(py)).endswith('python.exe" -m pytest -q')
+    assert devloop.as_shell(devloop.test_command(py)).replace('"', "").endswith("python.exe -m pytest -q")
+    assert devloop.as_shell([r"C:\My Dir\python.exe", "-m", "pytest"]) == '"C:/My Dir/python.exe" -m pytest'
     assert devloop.as_shell(devloop.test_command(js)) == "npm test"
     assert devloop.test_command(devloop.ROOT)[0].endswith("python.exe")
 
