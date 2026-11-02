@@ -1,5 +1,7 @@
 # Sanae — a private, local AI companion
 
+[![tests](https://github.com/ManasKhare3005/hey-sanae/actions/workflows/tests.yml/badge.svg)](https://github.com/ManasKhare3005/hey-sanae/actions/workflows/tests.yml)
+
 Say **"Hey Sanae"** and she listens, thinks with a local LLM, does things on your laptop and phone, and answers out loud. She's a friend first and an assistant second: a small 3D character in the corner of the screen who reacts while you talk, remembers your days, and now and then speaks first.
 
 **Nothing goes to the cloud.** The wake word, speech recognition, the LLMs, her voice, the image model and her memory all run on one Windows laptop (RTX 3050, 4 GB VRAM). The phone reaches it over a private Tailscale link.
@@ -336,3 +338,7 @@ Mark anything destructive or outward-facing `risky=True` with a `confirm` messag
 - **Avatar:**
   - VRoid AvatarSample_A (VRoid sample terms). You download it yourself from VRoid Hub; the edited model is not committed or redistributed.
   - Live2D's Hiyori sample and Cubism Core (Live2D terms). `setup.ps1` downloads them; they are not committed.
+
+## License
+
+Copyright © 2026 Manas Khare. All rights reserved. This code is shared for viewing only; see [LICENSE](LICENSE). Please don't use, copy or redistribute it without written permission.

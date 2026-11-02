@@ -1,0 +1,15 @@
+# Lean set for CI: what the test suite imports. No models, audio devices or GPU needed.
+pytest
+httpx
+PyYAML>=6.0
+numpy>=1.26
+requests>=2.31
+fastapi>=0.110
+uvicorn>=0.29
+dateparser>=1.2
+icalendar>=5.0
+pymupdf>=1.24
+av
+psutil>=5.9
+Pillow>=10.0
+qrcode>=7.4
