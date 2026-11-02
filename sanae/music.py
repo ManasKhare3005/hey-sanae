@@ -179,7 +179,7 @@ def song_note(user_text: str, track_now=None, web=None, facts=None, recent: Rece
 
 _FACTS: dict[tuple[str, str], str] = {}
 # Wikimedia rate-limits anonymous-looking clients hard: their policy asks for a name + contact URL
-UA = {"User-Agent": "Sanae/1.0 (personal voice assistant; https://github.com/ManasKhare3005/Sanae) python-requests"}
+UA = {"User-Agent": "Sanae/1.0 (personal voice assistant; https://github.com/ManasKhare3005/hey-sanae) python-requests"}
 
 
 def song_facts(t: "Track", web=None, timeout: float = 4.0) -> str:
