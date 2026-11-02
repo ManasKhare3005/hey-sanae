@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.pyc
+models/
+data/
+logs/
+.pytest_cache/
+CLAUDE.md
+searxng/.env
+searxng/uwsgi.ini
+dashboard/node_modules/
+dashboard/dist/
+secrets.yaml
+docs/User Settings.pdf
+dashboard/*.tsbuildinfo
+dashboard/public/avatar/*.vrm
+dashboard/public/avatar/hiyori/
+dashboard/public/live2d/
+
+# Personal, never published
+personal.yaml
+private/
+.claude/
+.agents/
+.vscode/
+image.png
+file_*.png
+skills-lock.json
+SANAE_FIXES.md
+*.xlsx

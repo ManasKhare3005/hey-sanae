@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.type.watch" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Heart rate when you ask "what's my heart rate?" (only after health sharing is turned on in the phone app) -->
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_sanae"
+        android:label="Sanae"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!-- Needs the phone app: it carries everything to the laptop -->
+        <meta-data android:name="com.google.android.wearable.standalone" android:value="false" />
+
+        <activity
+            android:name=".TalkActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Replies, her voice, approvals and the Today list from the phone app -->
+        <service android:name=".PhoneListener" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/sanae" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/sanae" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".TodayTile"
+            android:exported="true"
+            android:label="Sanae"
+            android:description="@string/tile_description"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data android:name="androidx.wear.tiles.PREVIEW" android:resource="@drawable/face_neutral" />
+        </service>
+
+        <service
+            android:name=".TalkComplication"
+            android:exported="true"
+            android:icon="@drawable/ic_mic"
+            android:label="Talk to Sanae"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,MONOCHROMATIC_IMAGE,SMALL_IMAGE" />
+            <meta-data android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS" android:value="0" />
+        </service>
+    </application>
+</manifest>

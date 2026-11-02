@@ -1,0 +1,94 @@
+export type SanaeEvent = {
+  id: number;
+  ts: number; // seconds since epoch
+  kind: string;
+  data: Record<string, any>;
+};
+
+export type ToolUse = { tool: string; args?: Record<string, unknown>; result?: string };
+
+export type Message = {
+  key: string;
+  role: "you" | "sanae";
+  text: string;
+  ts: number;
+  source?: string; // voice | dashboard | keyboard
+  guest?: string; // typed as "... ~Name": someone else talking to her
+  tools?: ToolUse[];
+};
+
+export type Approval = { id: number; prompt: string; tool: string };
+
+export type Fact = { id: number; text: string; created: string; score?: number };
+
+export type DiaryEntry = { day: string; text: string; tone: string; mood?: string; updated: string };
+export type SharedMoment = { id: number; kind: string; text: string; date: string; day: string; uses: number };
+export type DiaryData = {
+  enabled: boolean;
+  entries: DiaryEntry[];
+  moments: SharedMoment[];
+  taste: { length: number; tease: number; questions: number } | null;
+};
+export type AboutFact = { id: number; text: string; kind: string; updated: string; mentions: number };
+export type AboutData = {
+  enabled: boolean;
+  facts: AboutFact[];
+  threads: { id: number; about: string; ask_after: string; status: string }[];
+  pending?: { id: number; text: string; kind: string }[];
+  mood: { resting: string; energy: number; cheer: number } | null;
+};
+
+export type Todo = { uid: string; text: string; done: boolean; created: string };
+export type RoutineTask = { uid: string; text: string; freq: string; label: string; due_today: boolean; done: boolean; created: string };
+export type Reminder = { id: number; text: string; due: string; repeat?: string; spoken?: string };
+
+export type Services = {
+  models?: { name: string; vram_mb: number; size_mb: number }[] | { error: string };
+  gpu?: { vram_used_mb: number; vram_total_mb: number; util: number } | { error: string };
+  searxng?: boolean | { error: string };
+  down?: Record<string, string>; // service -> why (Ollama, SearXNG)
+  browser?: boolean;
+  memory?: boolean;
+};
+
+export type SanaeState = {
+  name?: string;
+  user?: string;
+  wake_phrase?: string;
+  mode?: string;
+  fast_model?: string;
+  planner_model?: string;
+  stt?: string;
+  started?: number;
+  stage?: { stage?: string };
+  heartbeat?: Record<string, any>;
+  approvals?: Approval[];
+  next_reminder?: Reminder | null;
+  services?: Services;
+};
+
+export type OrbMode = "idle" | "listening" | "transcribing" | "thinking" | "speaking" | "alert" | "offline";
+
+export type NoteItem = {
+  id: number; title: string; kind: string; started: string; ended: string; folder: string; summary: string; words: number;
+};
+export type NoteDetail = NoteItem & { notes_md: string; transcript_md: string; summary_md: string };
+export type NotesStatus = {
+  active: boolean; finishing: boolean; title?: string; kind?: string; elapsed_s?: number; words?: number; last?: string;
+};
+
+export type DocFile = { path: string; name: string; course: string; done: boolean };
+export type DocsStatus = { active: boolean; current: string; waiting: string[]; done: string[]; failed: string[] };
+export type DocsInfo = { folder: string; files: DocFile[]; status: DocsStatus };
+
+export type Pairing = { enabled: boolean; url: string; token: string; link: string; qr_svg: string; tailscale: boolean };
+
+export type LiveLine = { t: string; text: string };
+export type NotesLive = { active: boolean; final?: LiveLine[]; live?: LiveLine[]; partial?: string; captions?: boolean };
+
+export type PrivacyCategory = { id: string; label: string; what: string; where: string; amount: string };
+
+export type EvalSummary = { at: string; n: number; tool_accuracy: number; full_accuracy: number; p50_s: number; p95_s: number;
+  avg_prompt_tokens: number; model: string; categories: Record<string, { n: number; tool: number; full: number }>; file?: string };
+export type EvalResult = { category: string; say: string; called: string[]; tool_ok: boolean; args_ok: boolean; why: string; seconds: number };
+export type EvalData = { runs: (EvalSummary & { file: string })[]; latest: { summary: EvalSummary; results: EvalResult[] } | null };

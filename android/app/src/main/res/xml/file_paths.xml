@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="updates" path="updates/" />
+    <!-- camera button: the shot is written here, read into memory, then deleted (Photos.kt) -->
+    <cache-path name="photos" path="photos/" />
+</paths>

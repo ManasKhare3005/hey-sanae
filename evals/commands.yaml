@@ -1,0 +1,141 @@
+# Command accuracy test: run with  .\.venv\Scripts\python -m sanae.evals
+# Each case: what the user says, the tool(s) Sanae should use ("none" = just answer), optional
+# argument checks (substring, case-insensitive), and where it came from (default: laptop voice).
+# Tools are stubbed during the run, so nothing actually happens on the laptop or phone.
+# A case with "turns" is a short conversation; every turn is checked.
+
+apps_and_system:
+  - {say: "open spotify", expect: open_app, args: {name: spotify}}
+  - {say: "launch visual studio code", expect: open_app, args: {name: code}}
+  - {say: "open the calculator", expect: open_app, args: {name: calc}}
+  - {say: "close chrome", expect: close_app, args: {name: chrome}}
+  - {say: "turn the volume down", expect: volume, args: {action: down}}
+  - {say: "set the volume to 30", expect: volume, args: {level: "30"}}
+  - {say: "mute", expect: volume}
+  - {say: "pause the music", expect: [media_control, browser_media]}
+  - {say: "skip this song", expect: media_control, args: {action: next}}
+  - {say: "how's my laptop doing", expect: system_status}
+  - {say: "take a screenshot", expect: screenshot}
+  - {say: "lock the laptop", expect: lock_screen}
+  - {say: "shut down the laptop", expect: power}
+  - {say: "go to sleep sanae", expect: free_gpu}
+
+web:
+  - {say: "what's the latest news about nasa", expect: web_search}
+  - {say: "who won the last formula one race", expect: web_search}
+  - {say: "what's the weather in austin", expect: web_search}
+  - {say: "search youtube for lofi hip hop", expect: open_website, args: {site: youtube}}
+  - {say: "show me pictures of golden retrievers", expect: open_website, args: {section: images}}
+  - {say: "open github.com", expect: open_website, args: {target: github}}
+  - {say: "find italian restaurants near me on google maps", expect: open_website, args: {section: maps}}
+  - {say: "search amazon for a usb c hub", expect: open_website, args: {site: amazon}}
+  - turns:
+      - {say: "search youtube for arctic monkeys", expect: open_website}
+      - {say: "play the first video", expect: [browser_click, browser_media]}
+  - turns:
+      - {say: "open wikipedia", expect: open_website}
+      - {say: "search it for knowledge graphs", expect: [browser_type, open_website, browser_navigate]}
+
+memory:
+  - {say: "remember that my sister's name is maya", expect: remember, args: {fact: maya}}
+  - {say: "remember that i'm allergic to peanuts", expect: remember, args: {fact: peanut}}
+  - {say: "remember my student id is 1234567", expect: remember, args: {fact: "1234567"}}
+  - {say: "what do you know about my sister", expect: [recall, none]}
+  - {say: "forget what i told you about peanuts", expect: forget}
+  - {say: "do you remember my student id", expect: [recall, none]}
+
+reminders:
+  - {say: "remind me to call mom tomorrow at 6pm", expect: set_reminder, args: {when: "6"}}
+  - {say: "remind me about my exam on friday at 9am", expect: set_reminder, args: {text: exam}}
+  - {say: "remind me in 20 minutes to check the oven", expect: set_reminder, args: {when: "20"}}
+  - {say: "what reminders do i have", expect: list_reminders}
+  - {say: "cancel my reminder about the oven", expect: cancel_reminder}
+  - {say: "set a reminder for the lab report due next monday", expect: set_reminder}
+
+calendar:
+  - {say: "put the dentist on my calendar friday at 10am", expect: add_event, args: {title: dentist}}
+  - {say: "add an event called career fair next tuesday", expect: add_event}
+  - {say: "what's on my calendar tomorrow", expect: list_events}
+  - {say: "do i have anything planned this week", expect: [list_events, day_summary]}
+  - {say: "remove the dentist appointment from my calendar", expect: cancel_event}
+
+canvas_and_day:
+  - {say: "what's due today", expect: canvas_due, args: {period: today}}
+  - {say: "anything due tomorrow", expect: canvas_due, args: {period: tomorrow}}
+  - {say: "what assignments do i have this week", expect: canvas_due}
+  - {say: "when is my next class", expect: canvas_classes}
+  - {say: "what classes do i have today", expect: canvas_classes}
+  - {say: "what does my day look like", expect: day_summary}
+  - {say: "email me my summary for today", expect: email_digest}
+
+notes:
+  - {say: "take notes for this lecture", expect: start_notes}
+  - {say: "take notes on my zoom call", expect: start_notes, args: {kind: meeting}}
+  - {say: "stop taking notes", expect: stop_notes}
+  - {say: "what were the key points of today's lecture", expect: [meeting_notes, course_search]}
+  - {say: "take a note: buy printer paper", expect: take_note, args: {text: paper}}
+  - {say: "read my notes", expect: read_notes}
+
+course_material:
+  - {say: "what did the professor say about rdf schema", expect: course_search}
+  - {say: "explain sparql optional from the lab handout", expect: course_search}
+  - {say: "what's on the midterm review sheet", expect: course_search}
+  - {say: "according to the lecture slides what is entropy", expect: course_search}
+  - {say: "what course material do you have", expect: course_files}
+  - {say: "summarize every file in my course folder", expect: summarize_course_files}
+  - {say: "make notes of the week 3 slides", expect: summarize_course_files}
+  - {say: "make one summary of all my CS 102 slides", expect: summarize_course_files}
+
+phone:
+  - {say: "set a timer for 10 minutes on my phone", expect: phone_timer, args: {duration: "10"}}
+  - {say: "wake me up at 6:30 tomorrow", expect: phone_alarm, args: {time: "6:30"}, origin: phone}
+  - {say: "open instagram", expect: phone_open_app, args: {name: instagram}, origin: phone}
+  - {say: "open instagram on my phone", expect: phone_open_app}
+  - {say: "call mom", expect: phone_call, args: {contact: mom}, origin: phone}
+  - {say: "text alex on whatsapp i'm running late", expect: phone_message, args: {app: whatsapp}, origin: phone}
+  - {say: "text maya that i'll be home by 7", expect: phone_message, args: {contact: maya}}
+  - {say: "what did i miss", expect: phone_notifications, origin: phone}
+  - {say: "read my whatsapp messages", expect: phone_notifications}
+  - {say: "how's my phone battery", expect: phone_status}
+  - {say: "take me to austin marketplace", expect: phone_navigate, args: {destination: austin}, origin: phone}
+  - {say: "play some lofi on spotify", expect: phone_play, args: {app: spotify}, origin: phone}
+  - {say: "add a study group to my calendar tomorrow at 3pm", expect: add_event, origin: phone}
+  - {say: "email professor smith that i'll miss class", expect: [mail_send, phone_email], origin: phone}
+  - {say: "search youtube for cooking videos", expect: open_website, args: {site: youtube}, origin: phone}
+
+screen:
+  - {say: "what does this error mean", expect: read_screen}
+  - {say: "read my screen and summarise it", expect: read_screen}
+  - {say: "what's on my screen", expect: read_screen}
+
+files:
+  - {say: "find the pdf i downloaded about sparql", expect: find_files}
+  - {say: "open my resume", expect: [find_files, open_file]}
+
+mail:
+  - {say: "check my email", expect: mail_check}
+  - {say: "do i have any new emails", expect: mail_check}
+  - {say: "check my university email", expect: mail_check, args: {account: uni}}
+  - {say: "any new mail on my personal account", expect: mail_check, args: {account: personal}}
+  - {say: "any emails from professor smith", expect: mail_search, args: {query: smith}}
+  - {say: "find the email about my internship", expect: mail_search, args: {query: internship}}
+  - turns:
+      - {say: "check my email", expect: mail_check}
+      - {say: "read the first one", expect: mail_read}
+      - {say: "reply saying thanks i'll be there", expect: mail_reply, args: {text: thanks}}
+  - turns:
+      - {say: "check my inbox", expect: mail_check}
+      - {say: "archive the one from canvas", expect: mail_archive}
+  - {say: "email jane smith that i'll miss class tomorrow", expect: mail_send}
+
+time:
+  - {say: "what time is it", expect: [get_datetime, none]}
+  - {say: "what's the date today", expect: [get_datetime, none]}
+
+conversation:
+  - {say: "how are you doing", expect: none}
+  - {say: "tell me a joke", expect: none}
+  - {say: "thanks sanae", expect: none}
+  - {say: "what's two plus two", expect: none}
+  - {say: "give me a tip for staying focused", expect: none}
+  - {say: "what can you do", expect: none}

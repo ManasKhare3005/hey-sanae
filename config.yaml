@@ -1,0 +1,454 @@
+# Sanae configuration. Edit freely; restart Sanae to apply.
+
+assistant:
+  name: Sanae
+  user_name: friend
+  # How many tool-calling rounds the agent may take for one request
+  max_steps: 8
+
+llm:
+  host: http://127.0.0.1:11434
+  # Small model that lives on the GPU and handles most commands fast.
+  # Must be the -instruct tag: plain qwen3:4b is now the Thinking-2507 build, which
+  # always reasons (hundreds of hidden tokens per reply, even with think: false).
+  fast_model: qwen3:4b-instruct
+  # Bigger model loaded only when a request needs real planning/reasoning
+  planner_model: qwen3:8b
+  # How long Ollama keeps a model in VRAM after the last request
+  keep_alive: 15m
+  temperature: 0.3
+  # Qwen3 "thinking" mode is slow on a 4GB GPU; keep it off for snappy replies
+  think: false
+  request_timeout_s: 180
+  # Limit for a whole streamed reply, start to finish (request_timeout_s only limits each read,
+  # so a slow trickle could keep her "thinking" for ever). She says she got stuck when it's hit.
+  stream_deadline_s: 120
+  # Less free VRAM than this when the fast model has to load (a game, a crowded GPU): don't force
+  # it onto the GPU and use the smaller context, instead of spilling into shared memory and
+  # reloading over and over. 0 = always force.
+  tight_free_mb: 2800
+  tight_num_ctx: 2048
+  # Context window in tokens. Prompt + tools is ~1.3k; 4096 leaves room for history
+  # while keeping the 4b model fully on a 4 GB GPU (also set OLLAMA_FLASH_ATTENTION=1
+  # and OLLAMA_KV_CACHE_TYPE=q8_0 for Ollama; setup.ps1 does this)
+  num_ctx: 4096
+  # Sanae tokens per reply; spoken answers are short, this stops runaway output
+  num_predict: 256
+  # Force all of the fast model's layers onto the GPU. Ollama's own estimate leaves ~1 GB
+  # unused here and splits the model with the CPU (measured 33 -> 52 tokens/s). If loading
+  # fails (e.g. a game holding VRAM) it retries with Ollama's default. Remove to disable.
+  fast_model_gpu_layers: 99
+
+vision:
+  # Photos from the phone ("what plant is this?", a flyer, a menu). The chat model can't see and
+  # both don't fit in 4 GB, so a photo swaps the chat model out, this model looks, then it's
+  # unloaded again (the phone starts the swap when the camera opens). Photos stay in memory only
+  # (re-encoded, no EXIF/GPS); the description is remembered for follow-ups for remember_min.
+  enabled: true
+  # Claude looks first (needs brain.cloud; nothing loads on the laptop, ~3-5 s). "Let this be a
+  # secret between us" / "keep it private" with a photo = the local model below looks instead.
+  cloud: true
+  model: gemma3:4b
+  # Layers forced onto the GPU; 0 = Ollama decides. Don't force all: that pushed gemma's image
+  # reader onto the CPU (8-9 s per photo vs 2.7 s with Ollama's split).
+  gpu_layers: 0
+  max_side: 896
+  remember_min: 10
+
+wake_word:
+  # sherpa: listens for `phrase` below, any English words, no training.
+  # openwakeword: pre-trained models only (e.g. hey_jarvis).
+  # If the chosen engine fails to load, it falls back to openWakeWord "Hey Jarvis".
+  engine: sherpa
+  phrase: Hey Sanae
+  # Seconds to ignore the wake word after it fires (prevents one call firing twice)
+  cooldown_s: 1.0
+  sherpa:
+    model_dir: models/kws/gigaspeech-3.3M
+    # 0..1, raise if it triggers by accident, lower if it misses you. Tuned 2026-09-29 for quiet
+    # speech (0.12 + boost 2 + gain 16: best recall, still 0 false triggers on near-miss phrases)
+    threshold: 0.12
+    # How strongly decoding favours the phrase; raise a little if it misses you
+    boost: 2.0
+    # Parallel decoders offset in time so the phrase is caught wherever it falls
+    # (1 stream misses ~1 in 5 calls). ~3% of one CPU core each.
+    streams: 4
+    # Boost quiet speech up to this factor (1 = off). Loud speech is never changed.
+    max_gain: 16.0
+  openwakeword:
+    # Built-in name (hey_jarvis, alexa, hey_mycroft) or a custom .onnx path
+    model: hey_jarvis
+    threshold: 0.5
+
+web:
+  # Self-hosted SearXNG (docker compose up -d). Falls back to DuckDuckGo when it's not running.
+  searxng_url: http://127.0.0.1:8888
+  fallback_duckduckgo: true
+  results: 5
+  timeout_s: 8
+  # Read this many top pages for each search (more accurate, ~1-3 s slower). 0 = snippets only
+  read_pages: 4
+
+browser:
+  # Sanae's own Chrome window (separate profile; sign in to sites there once). Websites and
+  # Google searches open here so Sanae can click, type and read them.
+  enabled: true
+  profile_dir: data/browser-profile
+  # "chrome" = your installed Chrome; "chromium" = Playwright's own (run: playwright install chromium)
+  channel: chrome
+  headless: false
+
+memory:
+  # Facts you ask Sanae to remember, the conversation log, reminders and the action log
+  enabled: true
+  db: data/sanae.db
+
+conversation:
+  # One running chat, not separate commands: the last few turns word for word (while they're
+  # recent), plus a short summary of everything earlier that the model keeps up to date when
+  # Sanae is idle. Kept across restarts; a long break starts a new chat ("last time we talked...").
+  recent_turns: 6
+  recent_chars: 4000           # ~1k tokens: the model's 4096 are mostly her character + tools
+  recent_min: 30
+  summary: true
+  new_chat_after_h: 4
+  in_character: true           # say tool results in her own words ("Done, Spotify's up!"), times kept exact
+
+digest:
+  # Morning email: what's due (Canvas), classes and reminders for the day.
+  # Needs the email section in secrets.yaml (Gmail + app password).
+  enabled: true
+  time: "07:00"
+  weekends: true
+  # If the laptop was off at `time`, send when Sanae starts, but not after this
+  catch_up_until: "18:00"
+
+backup:
+  # Nightly backup (backup.py): databases zipped once a day, photos + voice notes mirrored.
+  # folder "" = OneDrive\Sanae Backups if OneDrive is set up, else data/backups.
+  enabled: true
+  folder: ""
+  # every day for this long, then the first backup of each month for good
+  keep_days: 60
+
+notes:
+  # Meeting / lecture notes: "Hey Sanae, take notes" (lecture: mic) or "take meeting notes"
+  # (meeting: laptop audio + mic). Only the transcript and notes are kept, never audio.
+  enabled: true
+  folder: ~/Documents/Sanae Notes
+  file: data/notes.md        # quick notes ("take a note: ...")
+  # In meetings, also record your own voice from the mic (turn off if you use laptop
+  # speakers and hear an echo in transcripts)
+  include_mic_in_meetings: true
+  # Live captions while recording: words show up ~0.5 s after they're said (small streaming
+  # model, CPU). Rough at first; Whisper's accurate text replaces them every ~30 s, and only
+  # Whisper's text is saved.
+  live_captions: true
+  live_model: models/live/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06
+
+dashboard:
+  # Live dashboard + API (the phone/watch apps will use the same API in Phase 4)
+  enabled: true
+  host: 127.0.0.1        # this laptop only
+  port: 8765
+  # Speak replies to commands typed in the dashboard (off: typing usually means "be quiet")
+  speak_typed_replies: false
+
+mail:
+  # Your Gmail (address + app password go in secrets.yaml under gmail:). Mail comes straight from
+  # Google to this laptop and is read by the local model. Sending always asks you first.
+  enabled: true
+  digest_important: true        # important unread mail in the morning digest
+  alert_senders: []             # phone alert for mail from these, e.g. ["@school.edu", "Professor Smith"]
+
+avatar:
+  # The companion in the bottom-right corner (sanae/avatar). renderer: live2d = 2D anime
+  # character (dashboard/live2d.html, model under dashboard/public/avatar/); vrm = the 3D one
+  # (dashboard/avatar.html). Runs on the integrated GPU (and on the CPU's efficiency cores while
+  # Whisper works) so it doesn't slow the assistant down.
+  enabled: true
+  renderer: vrm             # vrm = Sanae's 3D look (avatar/sanae.vrm, built by python -m sanae.avatar.lookalike); live2d = Hiyori
+  size: [320, 380]         # live2d window (bust framing); the VRM window is 400x420
+  fps: 60                  # while talking / listening / thinking (0 = every refresh; vrm used 0)
+  idle_fps: 30             # live2d: idle and nothing happening (blinks and breathing still smooth)
+  asleep_fps: 15           # while the models sleep ("go to sleep")
+  busy_fps: 30             # while Whisper transcribes
+  scale: 1.5               # render resolution per screen pixel (vrm: 2)
+  glow: true               # live2d: soft glowing outline (brighter while the mic is open)
+  lip_sync_delay_ms: 80    # mouth vs sound; raise if the mouth moves before the voice
+  hide_for_fullscreen_games: true   # games only: maximised Chrome / videos don't hide it
+  games: []                # extra game .exe names, if one isn't detected (e.g. ["MyGame.exe"])
+  efficiency_cores: true   # pin to the E-cores while Whisper transcribes
+  model: avatar/sanae.vrm  # the VRM under dashboard/dist (empty = avatar/model.vrm, the old Max edition)
+  bubbles: true            # what she says in a speech bubble above her head (adds 84 px to the window)
+  edge_peek: true          # drag her past the left/right screen edge: she tucks in there and peeks out
+  close_when_asleep: true  # "go to sleep" closes the avatar after she dozes off (frees ~600 MB); back when the models wake
+  close_asleep_after_s: 8
+  seasonal: true           # holiday hats and seasonal hair clips, a bun late at night, sleepy eyes after midnight
+
+hotkey:
+  # Anywhere, whichever app is in front (ignored in fullscreen games):
+  # tap = listen (like "Hey Sanae"), hold ~0.6 s = hide / show the avatar
+  enabled: true
+  combo: ctrl+alt+y
+
+dev:
+  # Change Sanae from the phone (Settings -> "Change Sanae"): the request goes to Claude Code on this
+  # laptop, which works on its own git branch; tests run, then you Approve or Reject on the phone.
+  # Approved changes are merged into main (never pushed) and Sanae restarts. Needs `claude` logged in.
+  enabled: true
+  model: ""                 # empty = Claude Code's default
+  timeout_minutes: 40
+
+brain:
+  # Her slow brain: Claude (through Claude Code, your Claude plan) for background thinking only:
+  # the nightly look back, her aims for the week, checking a line before she speaks first.
+  # Live chat stays local. Private things never leave (cloudbrain.py: hard moments, private
+  # notebook pages, health, sensitive topics; names swapped). Every call is logged, as sent,
+  # to data/brain/sent-YYYY-MM.jsonl. Off = everything stays local, as before.
+  cloud: true
+  model: sonnet
+  daily_calls: 30
+  daily_photos: 40          # photos Claude looks at a day (vision.cloud); past it the local model looks
+  check_first_lines: false  # Claude checks the lines she says first (not needed while chat is on: Claude writes them)
+  timeout_s: 120
+  # Experiment (2026-10-29): Claude is her whole mind: live chat, tools, summaries, diary, friend
+  # memory, her own lines (claudemind.py). The local model only for "let this be a secret between
+  # us" (and secret_min after it; "secret's over" ends it), comfort mode, anything touching an
+  # earlier secret, and when Claude fails. Off = the local model answers, as before.
+  chat: true
+  chat_daily_calls: 600     # past it, the local model for the rest of the day
+  chat_timeout_s: 90
+  secret_min: 30
+  local_keep_alive: 5m      # the local model leaves the GPU 5 min after its last secret
+
+health:
+  # Sleep, steps and heart rate from the Galaxy Watch (through Health Connect on the phone). Nothing
+  # is sent until you turn on Settings -> Health in the phone app; stays on this laptop; the
+  # privacy page deletes it. "How did I sleep?", "how many steps today?", "what's my heart rate?".
+  enabled: true
+
+screen_time:
+  # A nudge after long stretches: gaming -> phone (and watch) notification + a line in her voice;
+  # laptop -> she tells you to take a break (voice + Windows notification). Again every repeat_minutes.
+  # A break of break_minutes resets the clock. "Not now" keeps her voice out of it.
+  enabled: true
+  gaming_minutes: 120
+  laptop_minutes: 180
+  repeat_minutes: 60
+  break_minutes: 10
+
+league:
+  # League of Legends companion: short reactions during your game (kills, multikills, Baron,
+  # aces...), at most one a minute and never mid-fight, then a recap when it ends. Reads Riot's
+  # Live Client Data API on this laptop (only up during a game). No language model: the GPU stays
+  # free. "How did my last game go?" reads the recaps back. "Not now" silences the reactions.
+  enabled: false            # off: Valorant, not League (game_mode below covers Valorant)
+  chatter: true             # false = only the recap at the end
+  recap: true
+  min_gap_s: 60
+
+game_mode:
+  # A game starts (its process, below) -> she says a quick "have fun", unloads the models so the
+  # GPU is the game's, and stays quiet (no small talk; the avatar closes). It closes -> the chat
+  # model loads back and the avatar returns. "Hey Sanae" still works mid-game.
+  enabled: true
+  games: [VALORANT-Win64-Shipping.exe]   # the game itself, not the Riot Client
+  say_hi: true
+  wake_after: true
+  check_every_s: 5
+
+valorant:
+  # A one-line recap after each match ("GG, 13 to 9 on Ascent!", plus a rank change after
+  # competitive), never during one. Read from the Riot Client's own presence on this laptop (map,
+  # queue, team scores, rank); nothing is sent anywhere. "How did my last game go?" reads them back.
+  enabled: true
+  recap: true               # false = keep score quietly (still answers "how did my last game go?")
+
+routines:
+  # One phrase, several steps. A step is {say: "a line"} or {tool: <name>, args: {...}}; risky tools
+  # (closing apps, power...) still ask first. quiet: true = don't read the tool's answer out;
+  # if_running: <program.exe> = only while it's open. Tool names: see the dashboard's Accuracy tab
+  # or sanae/tools/*.py. Say the phrase on its own ("goodnight", "okay, gaming time!").
+  enabled: true
+  list:
+    - name: goodnight
+      say: ["goodnight", "good night", "night night", "i'm going to bed", "going to bed", "heading to bed"]
+      steps:
+        - say: "Goodnight! Tucking everything in."
+        - {tool: media_control, args: {action: stop}, quiet: true}
+        - {tool: list_events, args: {day: tomorrow}}
+        - {tool: quiet_for, args: {minutes: 480}, quiet: true}
+        - {tool: lock_screen, quiet: true}
+        - say: "Sleep well."
+    - name: study time
+      say: ["study time", "time to study", "study mode"]
+      steps:
+        - {tool: close_app, args: {name: discord}, if_running: Discord.exe}
+        - {tool: start_study, args: {minutes: 50}}
+    - name: gaming time
+      say: ["gaming time", "game time", "time to game", "gaming mode"]
+      steps:
+        - say: "Have fun! I'll get out of the way."
+        - {tool: open_app, args: {name: VALORANT}, quiet: true}
+        - {tool: free_gpu, quiet: true}
+
+briefing:
+  # The first time you wake her after from_hour (until until_hour) she runs through the day:
+  # weather, classes, what's due, first event, reminders, todo list. Say "skip" to end it.
+  # "Brief me" gives it any time. Weather: Open-Meteo (no key) for this location.
+  enabled: true
+  from_hour: 5
+  until_hour: 12
+  units: fahrenheit         # or celsius
+  location: {name: Austin, latitude: 30.2672, longitude: -97.7431}
+
+projects:
+  # Your code projects: every git repo in these folders (and one folder down, e.g. Jarvis/jarvis).
+  # Ask about them ("what changed in Flock this week?", "is it running?"), or have Claude change one
+  # ("ask Claude to fix the login bug in Flock"): it works on a branch, you approve, then "push it".
+  # GitHub (issues, PRs, CI) uses the gh tool: C:\max-android\gh\bin\gh.exe auth login, once.
+  enabled: true
+  folders: ["~/Desktop/My Projects"]
+  aliases: {}               # other names you call a project, e.g. {"chat app": "Chat Room"}
+  run: {}                   # how to start one, if not npm run dev/start: {"Flock": "npm run dev"}
+
+voice_id:
+  # Risky requests (send, delete, power...) in a voice that isn't yours need an Approve tap on
+  # your phone instead of a spoken "yes". Enrol once: run.bat --enroll-voice
+  enabled: true
+  model: models/voiceid/eres2net_en_voxceleb.onnx
+  profile: data/voice_profile.npy      # your voiceprint (numbers, not audio)
+  threshold: 0.42                      # measured: you 0.63+, other voices 0.21 or less; raise to be stricter
+  conversation_threshold: 0.32         # replies without the wake word right after she spoke (short lines score lower)
+
+hearing:
+  # How you sound, not just what you say (tone.py): flat and tired vs animated, compared with
+  # your own usual voice. Only used for that reply; just daily counts are kept (for the diary).
+  tone: true
+  tone_model: models/tone/ser.mm8.onnx
+  # Smarter "are you done talking?" (turn.py): waits through mid-thought pauses
+  turn_detector: true
+  turn_model: models/turn
+  # A soft "mm-hm" once when you pause mid-thought after talking a while
+  backchannel: true
+
+course:
+  # "Ask your course material": put slides, PDFs, Word and text files here (one subfolder per
+  # course works best). Indexed on this laptop; the files are never changed or moved.
+  enabled: true
+  folders:
+    - ~/Documents/Sanae Course Material
+  include_lecture_notes: true   # also search your saved meeting/lecture notes
+  rescan_minutes: 10
+  index: data/course.db
+
+alerts:
+  # Phone notifications before Canvas deadlines and classes (needs the phone app paired)
+  enabled: true
+  hours_before_due: [24, 3]
+  minutes_before_class: 10
+
+phone:
+  # Android app (Phase 4). The phone connects through Tailscale ("tailscale serve"), so the
+  # API itself stays on 127.0.0.1. Pair it by scanning the QR code in the dashboard.
+  enabled: true
+  public_url: ""            # blank = auto-detect https://<laptop>.<tailnet>.ts.net
+  token_file: data/phone_token.txt
+  approval_timeout_s: 90    # a risky phone command waits this long for your tap, then = no
+
+audio:
+  sample_rate: 16000
+  # null = system default microphone. Run `python -m sanae --list-devices` to see options
+  input_device: null
+  output_device: null
+  # Stop recording after this much silence once you start talking
+  silence_s: 1.0
+  # Start transcribing after this much silence; if the words look like a finished request,
+  # answer right away instead of waiting the full silence_s
+  early_s: 0.4
+  # If you trail off mid-sentence ("search for..."), wait up to this long for the rest
+  max_silence_s: 1.8
+  # Give up if you say nothing for this long after the wake word
+  no_speech_timeout_s: 5.0
+  max_record_s: 15.0
+  # When Sanae's reply is a question, listen for your answer without the wake word
+  follow_up: true
+  # ...for this long before going back to waiting for "Hey Sanae"
+  follow_up_timeout_s: 5.0
+  # Conversation mode: after every reply keep listening this long, so follow-ups need no wake
+  # word (0 = off; then only questions get a follow-up). Only your voice counts here (voice_id),
+  # and it's skipped while another app (a call) uses the mic.
+  conversation_s: 20
+  # Start speaking the first sentence while the rest of the answer is still being written
+  stream_replies: true
+  # Say "stop" (or "Sanae stop") to cut Sanae off, or "Hey Sanae" to cut it off and ask something new
+  barge_in: true
+  # Multiplier over measured background noise to count as speech
+  vad_sensitivity: 3.0
+  chime: true
+
+stt:
+  # tiny.en / base.en / small.en / medium.en. small.en is the sweet spot on CPU
+  model: small.en
+  device: cpu        # keep on CPU so the LLM gets all the VRAM
+  compute_type: int8
+  cpu_threads: 6     # measured best with the avatar running (it stays on the efficiency cores)
+  # Words to expect; helps Whisper with commands and app/site names (quiet speech: 24% -> 19% errors)
+  prompt: "Voice commands to an assistant called Sanae: open YouTube, search for, close this tab, play the video, volume, Spotify, Chrome, Google."
+  # Optional fast engine for clear speech: Moonshine (~0.2 s vs ~1.8 s for Whisper), downloaded by
+  # setup.ps1. Off by default: it misheard Alex's voice far more than Whisper does. Uncomment to try.
+  # fast_model_dir: models/stt/sherpa-onnx-moonshine-base-en-int8
+  fast_min_snr_db: 12
+
+tts:
+  # natural: a Microsoft natural voice (needs NaturalVoiceSAPIAdapter). "Online" voices send the
+  # text of Sanae's replies to Microsoft to be spoken (what you say and everything else stays local);
+  # Piper takes over automatically when offline. piper: fully local. sapi: built-in Windows voice.
+  # kokoro: more natural, ~0.45 s of CPU work per second of speech here (Piper ~0.05 s).
+  # Voices were compared with scripts/tts_audition.py (data/voices/).
+  engine: piper
+  natural_voice: Microsoft Ava Online
+  piper_voice: models/piper/en_US-hfc_female-medium.onnx   # picked 2026-10-11 (was hfc_male)
+  speed: 0.95
+  expressive: true      # her voice follows her emotion tag (slower and softer when sad, brighter when happy)
+  # Gentler delivery: a bit quieter, softer s/sh sounds, quiet words lifted (null = off)
+  soft: {gain_db: -3.0, treble_db: -2.0, squeeze: 0.35}
+  kokoro:
+    model_dir: models/kokoro/kokoro-multi-lang-v1_0
+    voice: af_heart            # or a blend: {af_heart: 0.6, af_bella: 0.4}
+    threads: 4
+  # Late at night she talks softer and a little slower (false = off)
+  night: {from: "23:00", until: "06:00"}
+  # Chance of a little "hehe" / "hmm" / "aw" at the start of a laughing / thinking / sad reply (0 = never)
+  sounds: 0.35
+  # Name pronunciations come from persona.yaml (pronounce)
+
+safety:
+  # Tools marked risky always need a spoken/typed "yes" first
+  confirm_risky: true
+  confirm_timeout_s: 8.0
+
+logging:
+  file: logs/sanae.log
+  level: INFO
+
+# Spoken name -> what to launch. Anything not listed is found via the Start Menu.
+apps:
+  notepad: notepad.exe
+  calculator: calc.exe
+  file explorer: explorer.exe
+  explorer: explorer.exe
+  command prompt: cmd.exe
+  terminal: wt.exe
+  powershell: powershell.exe
+  task manager: taskmgr.exe
+  settings: "ms-settings:"
+  paint: mspaint.exe
+  chrome: chrome
+  edge: msedge
+  vs code: code
+  vscode: code
+  visual studio code: code
+  spotify: "spotify:"
+  whatsapp: "whatsapp:"

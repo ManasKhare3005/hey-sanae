@@ -1,0 +1,36 @@
+requests>=2.31
+PyYAML>=6.0
+numpy>=1.26
+sounddevice>=0.4.6
+openwakeword>=0.6.0
+sherpa-onnx>=1.12
+sentencepiece>=0.2
+onnxruntime>=1.17
+tokenizers>=0.19          # turn detector (sanae/turn.py)
+faster-whisper>=1.0.3
+piper-tts>=1.2.0
+pyttsx3>=2.90
+psutil>=5.9
+Pillow>=10.0
+ddgs>=9.0
+trafilatura>=2.0
+playwright>=1.50
+fastembed>=0.4
+dateparser>=1.2
+winotify>=1.1
+icalendar>=5.0
+pystray>=0.19
+pywebview>=5.0
+soundcard>=0.4
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# dev
+pytest
+httpx
+qrcode>=7.4            # phone pairing QR code (dashboard)
+pymupdf>=1.24          # course material: PDF text (and doc renders)
+python-pptx>=1.0       # course material: slides
+python-docx>=1.1       # course material: Word files
+winocr>=0.0.13          # read my screen: Windows' built-in OCR
+winrt-Windows.Media.Control>=3.2 ; sys_platform == "win32"   # what song is playing (sanae/music.py)

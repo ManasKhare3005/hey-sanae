@@ -1,0 +1,343 @@
+package com.manaskhare.sanae
+
+import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import androidx.core.app.NotificationCompat
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+
+/**
+ * Always-connected link: a foreground service holding one WebSocket to Sanae's event stream.
+ * Turns events into notifications (approvals with Approve/Deny, reminders, notes ready) and
+ * reconnects with backoff when the laptop sleeps or the network changes.
+ */
+class SanaeService : Service() {
+    private val main = Handler(Looper.getMainLooper())
+    private var socket: WebSocket? = null
+    private var backoffMs = 2_000L
+    private var generation = 0                 // ignores callbacks from sockets we've replaced
+    private lateinit var nm: NotificationManager
+    private val reconnect = Runnable { connect() }
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    private val netCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            main.post { if (Hub.link.value != Link.ONLINE) { backoffMs = 2_000L; connect() } }
+        }
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        nm = getSystemService(NotificationManager::class.java)
+        getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(netCallback)
+        HomeWifi.start(this)                   // home Wi-Fi -> "arrived" / "left" (Settings -> Home Wi-Fi)
+        scope.launch {                         // she notices (Settings): app minutes, workouts, what's playing
+            while (true) {
+                runCatching { HomeWifi.check(this@SanaeService) }
+                if (Hub.link.value == Link.ONLINE) runCatching { Noticing.report(this@SanaeService) }
+                kotlinx.coroutines.delay(4 * 60_000L)
+            }
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val n = linkNotification("Connecting to Sanae…")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(LINK_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(LINK_ID, n)
+        }
+        if (!Prefs(this).paired) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_RECONNECT || Hub.link.value != Link.ONLINE) {
+            backoffMs = 2_000L
+            connect()
+        }
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        main.removeCallbacks(reconnect)
+        generation++
+        socket?.close(1000, "bye")
+        socket = null
+        Hub.link.value = Link.OFF
+        runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(netCallback) }
+        HomeWifi.stop(this)
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        super.onDestroy()
+    }
+
+    private fun connect() {
+        main.removeCallbacks(reconnect)
+        val api = SanaeApi.from(Prefs(this)) ?: return stopSelf()
+        val gen = ++generation
+        socket?.cancel()
+        Hub.link.value = Link.CONNECTING
+        socket = SanaeApi.http.newWebSocket(Request.Builder().url(api.wsUrl).build(), object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) = main.post {
+                if (gen != generation) return@post
+                backoffMs = 2_000L
+                Hub.link.value = Link.ONLINE
+                nm.notify(LINK_ID, linkNotification("Connected to your laptop"))
+                // Tell the laptop which apps are installed, so "open Instagram on my phone" works
+                scope.launch { runCatching { api.phoneState(PhoneActions.state(this@SanaeService)) } }
+                Sync.trigger(this@SanaeService, 300)        // reminders, events, recordings made while apart
+            }.let { }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                if (gen != generation) return
+                runCatching { JSONObject(text) }.getOrNull()?.let { main.post { handle(it) } }
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = main.post {
+                if (gen == generation) retry(unauthorized = code == 4401)
+            }.let { }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = main.post {
+                if (gen == generation) retry(unauthorized = response?.code == 401 || response?.code == 403)
+            }.let { }
+        })
+    }
+
+    private fun retry(unauthorized: Boolean) {
+        Hub.link.value = if (unauthorized) Link.UNAUTHORIZED else Link.CONNECTING
+        nm.notify(LINK_ID, linkNotification(if (unauthorized) "Pairing rejected: pair again in the app"
+                                            else "Waiting for the laptop…"))
+        val delay = if (unauthorized) 60_000L else backoffMs
+        backoffMs = (backoffMs * 2).coerceAtMost(60_000L)
+        main.postDelayed(reconnect, delay)
+    }
+
+    private fun handle(event: JSONObject) {
+        val kind = event.optString("kind")
+        val data = event.optJSONObject("data") ?: JSONObject()
+        when (kind) {
+            "hello" -> {
+                data.optJSONObject("state")?.optJSONObject("stage")?.let { Hub.stage.value = it.optString("stage") }
+                // Rebuild the approvals still open (requests without a result yet)
+                val recent = data.optJSONArray("recent")
+                val open = linkedMapOf<Int, PendingApproval>()
+                for (i in 0 until (recent?.length() ?: 0)) {
+                    val e = recent!!.getJSONObject(i)
+                    val d = e.optJSONObject("data") ?: continue
+                    when (e.optString("kind")) {
+                        "approval_request" -> open[d.optInt("id")] =
+                            PendingApproval(d.optInt("id"), d.optString("prompt"), d.optString("tool"))
+                        "approval_result" -> open.remove(d.optInt("id"))
+                    }
+                }
+                Hub.approvals.value = open.values.toList()
+                open.values.forEach { notifyApproval(it) }
+                // Deadline alerts sent while the phone was offline (last 3 hours), each shown once
+                val cutoff = System.currentTimeMillis() / 1000.0 - 3 * 3600
+                for (i in 0 until (recent?.length() ?: 0)) {
+                    val e = recent!!.getJSONObject(i)
+                    if (e.optString("kind") == "alert" && e.optDouble("ts") > cutoff) showAlert(e.optDouble("ts"), e.optJSONObject("data") ?: continue)
+                }
+                // Her texts from the last 6 hours the phone missed (offline), each shown once
+                val textCutoff = System.currentTimeMillis() / 1000.0 - 6 * 3600
+                for (i in 0 until (recent?.length() ?: 0)) {
+                    val e = recent!!.getJSONObject(i)
+                    if (e.optString("kind") == "text" && e.optDouble("ts") > textCutoff) showText(e.optDouble("ts"), e.optJSONObject("data") ?: continue)
+                }
+            }
+            "stage" -> Hub.stage.value = data.optString("stage")
+            "approval_request" -> {
+                val a = PendingApproval(data.optInt("id"), data.optString("prompt"), data.optString("tool"))
+                Hub.addApproval(a)
+                notifyApproval(a)
+                WatchLink.approval(this, a.id, a.prompt)
+            }
+            "approval_result" -> {
+                val id = data.optInt("id")
+                Hub.removeApproval(id)
+                nm.cancel(APPROVAL_BASE + id)
+                WatchLink.approval(this, id, "")
+            }
+            "reminder" -> when (data.optString("action")) {
+                "fired" -> reminderFired(data.optString("uid"), data.optString("text"), data.optLong("due_ms"))
+                else -> Sync.trigger(this)                  // added / cancelled on the laptop: copy it here
+            }
+            "event", "todo", "routine", "sync" -> Sync.trigger(this)
+            "us" -> scope.launch { Us.refresh(this@SanaeService) }   // the daily list, diary... changed on the laptop
+            "notes" -> {
+                val rec = data.optString("uid").takeIf { it.isNotBlank() }?.let { LocalDb.get(this).recording(it) }
+                when (data.optString("action")) {
+                    "saved" -> if (rec != null) Sync.finished(this, LocalDb.get(this), rec, data.optInt("note_id"))
+                               else notify(SanaeApp.CH_UPDATE, "Notes ready", data.optString("title"))
+                    "failed" -> if (rec != null) LocalDb.get(this).put(rec.copy(state = "failed", error = data.optString("error")))
+                                else notify(SanaeApp.CH_UPDATE, "Notes failed", data.optString("error"))
+                }
+            }
+            "devjob" -> {
+                val what = data.optString("project").ifBlank { "Sanae" } + ": " + data.optString("request")
+                when (data.optString("status")) {
+                    "ready" -> notify(SanaeApp.CH_UPDATE, "Change ready for your OK", what)
+                    "failed" -> notify(SanaeApp.CH_UPDATE, "Change failed", what)
+                    "merged" -> notify(SanaeApp.CH_UPDATE, "Change applied", what)
+                }
+            }
+            "docnotes" -> when (data.optString("action")) {
+                "done" -> if (data.optInt("done") > 0)
+                    notify(SanaeApp.CH_UPDATE, "Document notes ready", "${data.optInt("done")} file(s) · open Notes")
+                "failed" -> notify(SanaeApp.CH_UPDATE, "Couldn't read a document", data.optString("title"))
+            }
+            "phone_open" -> openLink(data.optString("url"), data.optString("title"))
+            // gaming for 2 h+: a buzz on the phone, which the Galaxy Watch mirrors
+            "nudge" -> notify(SanaeApp.CH_REMINDER, Persona.name(this), data.optString("text"))
+            "alert" -> showAlert(event.optDouble("ts"), data)
+            "text" -> showText(event.optDouble("ts"), data)
+            "phone_action" -> {
+                val api = SanaeApi.from(Prefs(this)) ?: return
+                val id = data.optInt("id")
+                scope.launch {
+                    val action = data.optString("action")
+                    val r = if (action == "heart_rate") WatchLink.heartRate(this@SanaeService)
+                            else PhoneActions.run(this@SanaeService, action, data.optJSONObject("params") ?: JSONObject())
+                    runCatching { api.phoneResult(id, r.ok, r.message) }
+                }
+            }
+            "digest" -> if (data.optString("error").isNotBlank()) {
+                notify(SanaeApp.CH_UPDATE, "Daily digest not sent", data.optString("error"))
+            }
+        }
+        Hub.events.tryEmit(SanaeEvent(kind, data))
+    }
+
+    /** The laptop fired a reminder. The phone has its own alarm for it: show it only once. */
+    private fun reminderFired(uid: String, text: String, dueMs: Long) {
+        val db = LocalDb.get(this)
+        val local = if (uid.isNotBlank()) db.reminder(uid) else null
+        if (local != null && local.status != "pending") return          // this phone's alarm already showed it
+        // a repeating one this phone already showed has moved on to its next time
+        if (local != null && local.repeat.isNotBlank() && dueMs > 0 && local.dueMs > dueMs) return
+        if (uid.isNotBlank()) {
+            Alarms.show(this, uid, text)
+            Alarms.cancel(this, uid)
+            if (local != null) {
+                db.put(Alarms.afterFiring(local, dirty = false))       // the laptop moved its copy on too
+                if (local.repeat.isNotBlank()) Alarms.armAll(this)
+            }
+        } else {
+            notify(SanaeApp.CH_REMINDER, "⏰ Reminder", text)
+        }
+    }
+
+    /** Deadline countdown: "Due in 3 hours: Lab 4", "Class in 10 minutes: ..." (tap opens the link). */
+    private fun showAlert(ts: Double, data: JSONObject) {
+        val prefs = Prefs(this)
+        val at = (ts * 1000).toLong()
+        if (at <= prefs.lastAlertAt) return
+        prefs.lastAlertAt = at
+        val eventId = (at % 1_000_000).toInt()
+        val uri = runCatching { android.net.Uri.parse(data.optString("url")) }.getOrNull()
+        val tap = if (uri != null && (uri.scheme == "https" || uri.scheme == "http"))
+            PendingIntent.getActivity(this, eventId, Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        else openApp()
+        nm.notify(nextId++, NotificationCompat.Builder(this, SanaeApp.CH_REMINDER)
+            .setSmallIcon(R.drawable.ic_stat_sanae)
+            .setContentTitle(data.optString("title"))
+            .setContentText(data.optString("text"))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .build())
+    }
+
+    /** She texted while you're away from the laptop (texts.py): a message you can reply to. */
+    private fun showText(ts: Double, data: JSONObject) {
+        val prefs = Prefs(this)
+        val at = (ts * 1000).toLong()
+        if (at <= prefs.lastTextAt) return
+        prefs.lastTextAt = at
+        Texts.received(this, data.optString("text"), at)
+    }
+
+    /** "Show me cute dog photos" from the phone: open the page here, or offer it as a notification. */
+    private fun openLink(url: String, title: String) {
+        val uri = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return
+        if (uri.scheme != "https" && uri.scheme != "http") return
+        val view = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Hub.visible > 0 && runCatching { startActivity(view) }.isSuccess) return
+        nm.notify(nextId++, NotificationCompat.Builder(this, SanaeApp.CH_UPDATE)
+            .setSmallIcon(R.drawable.ic_stat_sanae)
+            .setContentTitle("${Persona.name(this)} found it")
+            .setContentText(title.ifBlank { uri.host ?: url } + " · tap to open")
+            .setAutoCancel(true)
+            .setContentIntent(PendingIntent.getActivity(this, nextId, view, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            .build())
+    }
+
+    private fun openApp(): PendingIntent = PendingIntent.getActivity(
+        this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    private fun linkNotification(text: String): Notification =
+        NotificationCompat.Builder(this, SanaeApp.CH_LINK)
+            .setSmallIcon(R.drawable.ic_stat_sanae)
+            .setContentTitle(Persona.name(this))
+            .setContentText(text)
+            .setOngoing(true)
+            .setSilent(true)
+            .setContentIntent(openApp())
+            .build()
+
+    private var nextId = 5000
+    private fun notify(channel: String, title: String, text: String) {
+        nm.notify(nextId++, NotificationCompat.Builder(this, channel)
+            .setSmallIcon(R.drawable.ic_stat_sanae)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setContentIntent(openApp())
+            .build())
+    }
+
+    private fun notifyApproval(a: PendingApproval) {
+        fun action(approved: Boolean) = PendingIntent.getBroadcast(
+            this, a.id * 2 + if (approved) 1 else 0,
+            Intent(this, ApprovalReceiver::class.java)
+                .putExtra(ApprovalReceiver.EXTRA_ID, a.id)
+                .putExtra(ApprovalReceiver.EXTRA_APPROVED, approved),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        nm.notify(APPROVAL_BASE + a.id, NotificationCompat.Builder(this, SanaeApp.CH_APPROVAL)
+            .setSmallIcon(R.drawable.ic_stat_sanae)
+            .setContentTitle("${Persona.name(this)} needs your OK")
+            .setContentText(a.prompt)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(a.prompt))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setContentIntent(openApp())
+            .addAction(0, "Approve", action(true))
+            .addAction(0, "Deny", action(false))
+            .build())
+    }
+
+    companion object {
+        const val LINK_ID = 1
+        const val APPROVAL_BASE = 1000
+        const val ACTION_RECONNECT = "reconnect"
+    }
+}

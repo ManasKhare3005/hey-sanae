@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Home Wi-Fi: Android shows Wi-Fi names only with location permission; nothing about location is sent -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Wind-down: Do Not Disturb at midnight (only after you allow it in Android's settings) -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Working without the laptop: recording lectures, reminders that fire on time, the Sanae calendar -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Phone powers: each is off until granted in Sanae → Settings → Phone powers -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Health (Settings -> Health, off until you turn it on): read-only, from Health Connect -->
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <!-- She notices (Settings -> She notices, each off until turned on): workouts, minutes in a few
+         known apps (granted in Android's Usage access screen) -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+
+    <!-- See installed apps (to open them by name) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+        </intent>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.google.android.apps.healthdata" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.google.android.apps.youtube.music" />
+        <!-- the camera button hands off to the camera app -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".SanaeApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="Sanae"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/Theme.Sanae"
+        tools:targetApi="35">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+            <!-- max://pair?url=...&token=... (the dashboard's QR code) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="max" android:host="pair" />
+            </intent-filter>
+            <!-- Share a photo to Sanae from the gallery or any app -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Health Connect shows why Sanae asks for health data (privacy policy screen) -->
+        <activity
+            android:name=".HealthRationaleActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Sanae">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".HealthRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Quick listening sheet. ASSIST = Sanae can be the phone's digital assistant (side key /
+             corner swipe); VOICE_COMMAND = headset button. -->
+        <activity
+            android:name=".AssistActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.manaskhare.sanae.assist"
+            android:theme="@style/Theme.Sanae.Sheet">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".SanaeTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_sanae"
+            android:label="Sanae"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <receiver android:name=".SanaeWidget" android:exported="true" android:label="Talk to Sanae">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_sanae_info" />
+        </receiver>
+
+        <!-- Today & todo list: next things today, todos with checkboxes, talk button (works offline) -->
+        <receiver android:name=".TodayWidgetReceiver" android:exported="true" android:label="Sanae: today &amp; todos">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_info" />
+        </receiver>
+
+        <service
+            android:name=".SanaeService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a live connection to the user's own assistant on their laptop for reminders and approvals" />
+        </service>
+
+        <receiver android:name=".ApprovalReceiver" android:exported="false" />
+        <receiver android:name=".TextReplyReceiver" android:exported="false" />
+        <receiver android:name=".ReminderAlarmReceiver" android:exported="false" />
+        <receiver android:name=".StopRecordingReceiver" android:exported="false" />
+
+        <service
+            android:name=".RecordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <receiver android:name=".VoiceNoteReceiver" android:exported="false" />
+        <!-- Wind-down at midnight + the morning alarm she sets -->
+        <receiver android:name=".WindDownReceiver" android:exported="false" />
+        <receiver android:name=".RoutineReceiver" android:exported="false" />
+
+        <!-- A voice call with her (Home -> phone icon); keeps going with the screen off -->
+        <service
+            android:name=".CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+        <activity
+            android:name=".CallActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.Sanae" />
+
+        <service
+            android:name=".SanaeNotificationListener"
+            android:exported="true"
+            android:label="Sanae"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- The Galaxy Watch app: its voice, approvals and Today tile come through here -->
+        <service android:name=".WatchRelay" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/sanae" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/sanae" />
+            </intent-filter>
+        </service>
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <!-- Hands a downloaded app update to Android's installer -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>
